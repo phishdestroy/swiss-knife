@@ -1,0 +1,17 @@
+name: Sync upstream (12 hours)
+
+on:
+  schedule:
+    - cron: '7 2,14 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fork-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    uses: phishdestroy/phishdestroy/.github/workflows/sync-fork-reusable.yml@4e1a20b98116fb5da504bad0f0f2b182c9562d20
