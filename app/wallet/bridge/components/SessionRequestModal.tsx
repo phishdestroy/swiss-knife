@@ -38,16 +38,15 @@ import { useAccount } from "wagmi";
 import {
   formatEther,
   Address,
-  createPublicClient,
-  http,
   erc20Abi,
   zeroAddress,
 } from "viem";
 import { DecodedSignatureData, SessionRequest } from "../types";
 import { renderParams } from "@/components/renderParams";
 import { chainIdToChain } from "@/data/common";
+import { getPublicClient } from "@/lib/publicClient";
 import { useCallback, useEffect, useState } from "react";
-import axios from "axios";
+import { fetchAddressLabels } from "@/utils/addressLabels";
 import { fetchContractAbi, generateTenderlyUrl } from "@/utils";
 import { BsArrowsAngleExpand, BsArrowsAngleContract } from "react-icons/bs";
 
@@ -105,15 +104,12 @@ export default function SessionRequestModal({
     }
   }, [decodedTxData]);
 
-  const fetchAddressLabels = useCallback(
+  const fetchAndSetAddressLabels = useCallback(
     async (address: string, chainId: number) => {
       setAddressLabels([]);
 
       try {
-        const client = createPublicClient({
-          chain: chainIdToChain[chainId],
-          transport: http(),
-        });
+        const client = getPublicClient(chainId);
 
         // check if the address is a contract
         const res = await client.getBytecode({
@@ -137,16 +133,9 @@ export default function SessionRequestModal({
         }
       } catch {
         try {
-          const res = await axios.get(
-            `${
-              process.env.NEXT_PUBLIC_DEVELOPMENT === "true"
-                ? ""
-                : "https://swiss-knife.xyz"
-            }/api/labels/${address}`
-          );
-          const data = res.data;
-          if (data.length > 0) {
-            setAddressLabels(data);
+          const labels = await fetchAddressLabels(address, chainId);
+          if (labels.length > 0) {
+            setAddressLabels(labels);
           }
         } catch {
           setAddressLabels([]);
@@ -167,13 +156,13 @@ export default function SessionRequestModal({
       const chainId = chainIdStr ? parseInt(chainIdStr) : null;
 
       if (chainId) {
-        fetchAddressLabels(
+        fetchAndSetAddressLabels(
           currentSessionRequest.params.request.params[0].to,
           chainId
         );
       }
     }
-  }, [currentSessionRequest, fetchAddressLabels]);
+  }, [currentSessionRequest, fetchAndSetAddressLabels]);
 
   return (
     <Modal

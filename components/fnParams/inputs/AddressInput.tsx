@@ -13,9 +13,10 @@ import {
 import { ExternalLinkIcon } from "@chakra-ui/icons";
 import {
   fetchContractAbi,
-  getEnsAddress,
-  getEnsAvatar,
-  getEnsName,
+  resolveNameToAddress,
+  resolveAddressToName,
+  getNameAvatar,
+  isResolvableName,
   getPath,
   slicedText,
 } from "@/utils";
@@ -26,9 +27,9 @@ import subdomains from "@/subdomains";
 import debounce from "lodash/debounce";
 import { motion, AnimatePresence } from "framer-motion";
 import { InputField } from "@/components/InputField";
-import { Address, createPublicClient, http, zeroAddress, erc20Abi } from "viem";
-import axios from "axios";
-import { chainIdToChain } from "@/data/common";
+import { Address, zeroAddress, erc20Abi } from "viem";
+import { fetchAddressLabels } from "@/utils/addressLabels";
+import { getPublicClient } from "@/lib/publicClient";
 
 interface InputFieldProps extends InputProps {
   chainId: number;
@@ -71,9 +72,10 @@ export const AddressInput = ({
       setErrorResolving(false);
       console.log({ val });
       try {
-        if (val.includes(".eth")) {
+        // Check if it's a resolvable name (ENS, Basename, etc.)
+        if (isResolvableName(val)) {
           setIsResolving(true);
-          const address = await getEnsAddress(val);
+          const address = await resolveNameToAddress(val);
           if (address) {
             setResolvedAddress(address);
             setEnsName(val);
@@ -82,11 +84,12 @@ export const AddressInput = ({
             } as any);
             setLastResolvedValue(address);
           } else {
-            throw new Error("ENS resolution failed");
+            throw new Error("Name resolution failed");
           }
         } else if (val.length === 42) {
+          // It's an address, try reverse resolution
           try {
-            const name = await getEnsName(val);
+            const name = await resolveAddressToName(val);
             if (name) {
               setEnsName(name);
               setResolvedAddress(val);
@@ -107,7 +110,7 @@ export const AddressInput = ({
           setLastResolvedValue("");
         }
       } catch (error) {
-        console.error("Error resolving ENS:", error);
+        console.error("Error resolving name:", error);
         setErrorResolving(true);
         setEnsName("");
         setResolvedAddress("");
@@ -125,10 +128,7 @@ export const AddressInput = ({
       setErrorResolving(false);
       setAddressLabels([]);
       try {
-        const client = createPublicClient({
-          chain: chainIdToChain[chainId],
-          transport: http(),
-        });
+        const client = getPublicClient(chainId);
 
         // check if the address is a contract
         const res = await client.getBytecode({
@@ -152,16 +152,9 @@ export const AddressInput = ({
         }
       } catch {
         try {
-          const res = await axios.get(
-            `${
-              process.env.NEXT_PUBLIC_DEVELOPMENT === "true"
-                ? ""
-                : "https://swiss-knife.xyz"
-            }/api/labels/${val}`
-          );
-          const data = res.data;
-          if (data.length > 0) {
-            setAddressLabels(data);
+          const labels = await fetchAddressLabels(val, chainId);
+          if (labels.length > 0) {
+            setAddressLabels(labels);
           }
         } catch {
           setAddressLabels([]);
@@ -185,7 +178,7 @@ export const AddressInput = ({
 
   useEffect(() => {
     if (ensName) {
-      getEnsAvatar(ensName).then((avatar) => {
+      getNameAvatar(ensName).then((avatar) => {
         setEnsAvatar(avatar || "");
       });
     } else {

@@ -54,23 +54,30 @@ import {
   celo,
   gnosis,
   ink,
+  linea,
   optimism,
   polygon,
   unichain,
+  worldchain,
 } from "wagmi/chains";
-import { Address, parseEther } from "viem";
-import axios from "axios";
+import { monad } from "@/data/common";
+import {
+  Address,
+  parseEther,
+  encodeFunctionData,
+  PublicClient,
+  Chain,
+} from "viem";
+import {
+  getPublicClient,
+  createPublicClientForRpcUrl,
+} from "@/lib/publicClient";
+import { fetchAddressLabels } from "@/utils/addressLabels";
 import { ConnectButton } from "@/components/ConnectButton";
 import { chainIdToImage } from "@/data/common";
 import { fetchContractAbi } from "@/utils";
 import { InputField } from "@/components/InputField";
 import NumberFlow from "@number-flow/react";
-
-const katana = {
-  id: 747474,
-  iconUrl: "https://katana.network/meta/favicon-96x96.png",
-  iconBackground: "blue.400",
-};
 
 const endurance = {
   id: 648,
@@ -85,7 +92,95 @@ const endurance = {
   },
 };
 
-interface Chain {
+const katana = {
+  id: 747474,
+  iconUrl: "https://katana.network/meta/favicon-96x96.png",
+  iconBackground: "blue.400",
+};
+
+const zircuit = {
+  id: 48900,
+  name: "Zircuit",
+  iconUrl: "/chainIcons/zircuit.svg",
+  iconBackground: "transparent",
+  blockExplorers: {
+    default: {
+      name: "Zircuit Explorer",
+      url: "https://explorer.zircuit.com",
+    },
+  },
+};
+
+const citrea = {
+  id: 4114,
+  name: "Citrea",
+  iconUrl: "/chainIcons/citrea.svg",
+  iconBackground: "#F0781B",
+  nativeCurrency: {
+    name: "Citrea BTC",
+    symbol: "cBTC",
+    decimals: 18,
+  },
+  rpcUrls: {
+    default: {
+      http: ["https://rpc.mainnet.citrea.xyz"],
+    },
+  },
+  blockExplorers: {
+    default: {
+      name: "Citrea Explorer",
+      url: "https://explorer.mainnet.citrea.xyz",
+    },
+  },
+};
+
+const stablechain = {
+  id: 988,
+  name: "StableChain",
+  iconUrl: "/chainIcons/stable.svg",
+  iconBackground: "white",
+  nativeCurrency: {
+    name: "USDT0",
+    symbol: "USDT0",
+    decimals: 6,
+  },
+  rpcUrls: {
+    default: {
+      http: ["https://rpc.stable.xyz"],
+    },
+  },
+  blockExplorers: {
+    default: {
+      name: "StableScan",
+      url: "https://stablescan.xyz",
+    },
+  },
+};
+
+const megaeth = {
+  id: 4326,
+  name: "MegaETH",
+  iconUrl: "/chainIcons/megaeth.svg",
+  iconBackground: "white",
+  nativeCurrency: {
+    name: "Ether",
+    symbol: "ETH",
+    decimals: 18,
+  },
+  rpcUrls: {
+    default: {
+      http: ["https://mainnet.megaeth.com/rpc"],
+    },
+  },
+  blockExplorers: {
+    default: {
+      name: "MegaETH Explorer",
+      url: "https://mega.etherscan.io",
+    },
+  },
+};
+
+interface SupportedChain {
   id: number;
   name: string;
   color: string;
@@ -117,8 +212,75 @@ const SEPOLIA_PECTRA_START_EPOCH = 1741159740;
 
 const skeletonAddress = "0x1111222233334444000000000000000000000000";
 
+// 7702 Chain Check Constants and Function
+const DELEGATION_PREFIX = "0xef0100";
+const DUMMY_DELEGATE_CODE =
+  "0x6080604052348015600e575f5ffd5b50600436106026575f3560e01c8063c1cd785614602a575b5f5ffd5b60306044565b604051603b91906064565b60405180910390f35b5f6001905090565b5f8115159050919050565b605e81604c565b82525050565b5f60208201905060755f8301846057565b9291505056fea2646970667358221220265103185dec648e9bcac4dd322c8482f2923aa8ab542d2233f257916b73cd6a64736f6c634300081c0033" as `0x${string}`;
+const DUMMY_DELEGATE_ADDRESS =
+  "0x1234567890abcdef1234567890abcdef12345678" as `0x${string}`;
+
+const isSevenSevenZeroTwoAbi = [
+  {
+    type: "function",
+    name: "isSevenSevenZeroTwo",
+    inputs: [],
+    outputs: [{ name: "", type: "bool", internalType: "bool" }],
+    stateMutability: "pure",
+  },
+] as const;
+
+async function checkChainIs7702Enabled({
+  publicClient,
+  chain,
+  address,
+}: {
+  publicClient?: PublicClient;
+  chain?: Chain;
+  address: `0x${string}`;
+}): Promise<boolean> {
+  let client = publicClient;
+  if (!client && chain) {
+    client = getPublicClient(chain.id);
+  }
+  if (!client) throw new Error("No publicClient or chain provided");
+
+  const connectedAccount7702Code = (DELEGATION_PREFIX +
+    DUMMY_DELEGATE_ADDRESS.slice(2)) as `0x${string}`;
+  const data = encodeFunctionData({
+    abi: isSevenSevenZeroTwoAbi,
+    functionName: "isSevenSevenZeroTwo",
+  });
+
+  try {
+    const result = await client.call({
+      to: address,
+      data,
+      stateOverride: [
+        {
+          address: DUMMY_DELEGATE_ADDRESS,
+          code: DUMMY_DELEGATE_CODE,
+        },
+        {
+          address,
+          code: connectedAccount7702Code,
+        },
+      ],
+    });
+    return (
+      result.data ===
+      "0x0000000000000000000000000000000000000000000000000000000000000001"
+    );
+  } catch (error: any) {
+    console.error(
+      `Error checking chain ${chain?.name} 7702 support:`,
+      error.shortMessage
+    );
+    return false;
+  }
+}
+
 // All chains that support 7702
-const chains: Chain[] = [
+const chains: SupportedChain[] = [
   {
     id: mainnet.id,
     name: "Ethereum",
@@ -162,6 +324,20 @@ const chains: Chain[] = [
     chainObj: celo,
   },
   {
+    id: citrea.id,
+    name: "Citrea",
+    color: "orange.400",
+    abbreviation: "CITREA",
+    chainObj: citrea,
+  },
+  {
+    id: endurance.id,
+    name: "Endurance",
+    color: "orange.400",
+    abbreviation: "ACE",
+    chainObj: endurance,
+  },
+  {
     id: gnosis.id,
     name: "Gnosis Chain",
     color: "green.300",
@@ -183,6 +359,30 @@ const chains: Chain[] = [
     chainObj: katana,
   },
   {
+    id: linea.id,
+    name: "Linea",
+    color: "blue.500",
+    abbreviation: "LINEA",
+    chainObj: linea,
+  },
+  {
+    id: megaeth.id,
+    name: "MegaETH",
+    color: "white",
+    abbreviation: "MEGA",
+    chainObj: megaeth,
+  },
+  {
+    id: monad.id,
+    name: "Monad",
+    color: "purple.400",
+    abbreviation: "MON",
+    chainObj: {
+      ...monad,
+      iconBackground: "white",
+    },
+  },
+  {
     id: optimism.id,
     name: "Optimism",
     color: "red.300",
@@ -197,6 +397,13 @@ const chains: Chain[] = [
     chainObj: polygon,
   },
   {
+    id: stablechain.id,
+    name: "StableChain",
+    color: "green.300",
+    abbreviation: "STABLE",
+    chainObj: stablechain,
+  },
+  {
     id: unichain.id,
     name: "UniChain",
     color: "pink.400",
@@ -204,11 +411,18 @@ const chains: Chain[] = [
     chainObj: unichain,
   },
   {
-    id: endurance.id,
-    name: "Endurance",
-    color: "orange.400",
-    abbreviation: "ACE",
-    chainObj: endurance,
+    id: worldchain.id,
+    name: "Worldchain",
+    color: "white",
+    abbreviation: "World",
+    chainObj: worldchain,
+  },
+  {
+    id: zircuit.id,
+    name: "Zircuit",
+    color: "green.400",
+    abbreviation: "ZRC",
+    chainObj: zircuit,
   },
 ];
 
@@ -226,6 +440,7 @@ const wallets: SupportedApp[] = [
       gnosis.id,
       ink.id,
       katana.id, // https://explorer.ambire.com/?chainId=747474&txnId=0xc7f0957c270dd47261c69228e72a4c689f9e1293a0def2bc06b9e2c7c45c0524
+      linea.id,
       optimism.id,
       polygon.id,
       unichain.id,
@@ -246,9 +461,11 @@ const wallets: SupportedApp[] = [
       berachain.id,
       bsc.id,
       gnosis.id,
+      linea.id,
       optimism.id,
       // polygon.id,
       unichain.id,
+      zircuit.id,
     ],
     announcement: {
       epochTimestamp: 1746028260,
@@ -308,21 +525,17 @@ const wallets: SupportedApp[] = [
     name: "Uniswap Wallet",
     logoUrl: getFaviconUrl("https://wallet.uniswap.org/"),
     siteUrl: "https://wallet.uniswap.org//",
-    supportedChainIds: [mainnet.id, base.id, bsc.id, optimism.id, unichain.id],
+    supportedChainIds: [
+      mainnet.id,
+      arbitrum.id,
+      base.id,
+      bsc.id,
+      optimism.id,
+      unichain.id,
+    ],
     announcement: {
       epochTimestamp: 1749738240,
       tweet: "https://x.com/Uniswap/status/1933168423825035768",
-    },
-  },
-  {
-    name: "zWallet",
-    logoUrl:
-      "https://raw.githubusercontent.com/zammdefi/zWallet/refs/heads/main/extension/icon48.png",
-    siteUrl: "https://zwallets.eth.limo/",
-    supportedChainIds: [mainnet.id, base.id],
-    announcement: {
-      epochTimestamp: 1755698880,
-      tweet: "https://x.com/z0r0zzz/status/1958169302315729282",
     },
   },
   {
@@ -342,6 +555,113 @@ const wallets: SupportedApp[] = [
     announcement: {
       epochTimestamp: 1753812000,
       tweet: "https://x.com/nufiwallet/status/1950255004612202578",
+    },
+  },
+  {
+    name: "zWallet",
+    logoUrl:
+      "https://raw.githubusercontent.com/zammdefi/zWallet/refs/heads/main/extension/icon48.png",
+    siteUrl: "https://zwallets.eth.limo/",
+    supportedChainIds: [mainnet.id, base.id],
+    announcement: {
+      epochTimestamp: 1755698880,
+      tweet: "https://x.com/z0r0zzz/status/1958169302315729282",
+    },
+  },
+  {
+    name: "Rewardy Wallet",
+    logoUrl: "https://www.rewardywallet.com/meta/favicon_64.png",
+    siteUrl: "https://www.rewardywallet.com/en",
+    supportedChainIds: [mainnet.id, base.id],
+    announcement: {
+      epochTimestamp: 1764979200,
+      tweet:
+        "https://cointelegraph.com/press-releases/rewardy-unveils-erc-7702-based-wallet-delivering-smart-ux-without-changing-wallet-addresses",
+    },
+  },
+  {
+    name: "Rainbow Wallet",
+    logoUrl: getFaviconUrl("https://rainbow.me"),
+    siteUrl: "https://rainbow.me/",
+    supportedChainIds: [
+      mainnet.id,
+      arbitrum.id,
+      base.id,
+      berachain.id,
+      bsc.id,
+      celo.id,
+      gnosis.id,
+      ink.id,
+      optimism.id,
+      polygon.id,
+      unichain.id,
+      katana.id,
+    ],
+    announcement: {
+      epochTimestamp: 1772050680,
+      tweet: "https://x.com/rainbowdotme/status/2026753700216127820",
+    },
+  },
+  {
+    name: "WalletChan",
+    logoUrl: "https://walletchan.com/images/walletchan-icon-nobg.png",
+    siteUrl: "https://walletchan.com",
+    // source: wchan/walletchan/_docs/7702.md + chainRegistry/knownChains.generated.ts
+    supportedChainIds: [
+      mainnet.id,
+      arbitrum.id,
+      base.id,
+      berachain.id,
+      bsc.id,
+      celo.id,
+      citrea.id,
+      gnosis.id,
+      ink.id,
+      katana.id,
+      linea.id,
+      megaeth.id,
+      monad.id,
+      optimism.id,
+      polygon.id,
+      unichain.id,
+    ],
+    announcement: {
+      epochTimestamp: 1779886800,
+      tweet: "https://x.com/walletchan_/status/2059620716228784407",
+    },
+  },
+];
+
+const hardwareWallets: SupportedApp[] = [
+  {
+    name: "GridPlus",
+    logoUrl: getFaviconUrl("https://gridplus.io"),
+    siteUrl: "https://gridplus.io/",
+    supportedChainIds: [
+      mainnet.id,
+      arbitrum.id,
+      base.id,
+      berachain.id,
+      bsc.id,
+      celo.id,
+      endurance.id,
+      gnosis.id,
+      ink.id,
+      katana.id,
+      linea.id,
+      megaeth.id,
+      monad.id,
+      optimism.id,
+      polygon.id,
+      stablechain.id,
+      unichain.id,
+      worldchain.id,
+      zircuit.id,
+    ],
+    filterSupportsAllChains: true,
+    announcement: {
+      epochTimestamp: 1767884564,
+      tweet: "https://x.com/ambire/status/2009264088606769348",
     },
   },
 ];
@@ -482,6 +802,7 @@ const dapps: SupportedApp[] = [
       optimism.id,
       polygon.id,
       unichain.id,
+      zircuit.id,
     ],
   },
   {
@@ -565,6 +886,7 @@ const dapps: SupportedApp[] = [
       optimism.id,
       polygon.id,
       unichain.id,
+      zircuit.id,
     ],
   },
   {
@@ -697,18 +1019,28 @@ const shameWallets: SupportedApp[] = [
     twitterHandle: "phantom",
   },
   {
-    name: "Rainbow Wallet",
-    logoUrl: getFaviconUrl("https://rainbow.me"),
-    siteUrl: "https://rainbow.me/",
-    supportedChainIds: [], // Empty since they don't support 7702
-    twitterHandle: "rainbowdotme",
-  },
-  {
     name: "Frame Wallet",
     logoUrl: getFaviconUrl("https://frame.sh/"),
     siteUrl: "https://frame.sh/",
     supportedChainIds: [], // Empty since they don't support 7702
     twitterHandle: "0xframe",
+  },
+];
+
+const shameHardwareWallets: SupportedApp[] = [
+  {
+    name: "Ledger",
+    logoUrl: "/external/ledger-logo.png",
+    siteUrl: "https://www.ledger.com/",
+    supportedChainIds: [],
+    twitterHandle: "Ledger",
+  },
+  {
+    name: "Trezor",
+    logoUrl: getFaviconUrl("https://trezor.io/"),
+    siteUrl: "https://trezor.io/",
+    supportedChainIds: [],
+    twitterHandle: "Trezor",
   },
 ];
 
@@ -730,13 +1062,14 @@ const shameDapps: SupportedApp[] = [
   },
 ];
 
-const ChainTag = ({ chain }: { chain: Chain }) => {
+const ChainTag = ({ chain }: { chain: SupportedChain }) => {
   return (
     <Tooltip
       label={chain.abbreviation || chain.name}
       hasArrow
       placement="top"
       bg="white"
+      color="gray.900"
     >
       <Box
         display="inline-flex"
@@ -754,7 +1087,7 @@ const ChainIcon = ({
   chain,
   size = "24px",
 }: {
-  chain: Chain;
+  chain: SupportedChain;
   size?: string | { base: string; md: string };
 }) => {
   const logoUrl = chainIdToImage[chain.id] || "";
@@ -797,11 +1130,11 @@ const AppChainDisplay = ({
   globalChainsList,
 }: {
   supportedAppChainIds: number[];
-  globalChainsList: Chain[];
+  globalChainsList: SupportedChain[];
 }) => {
   const chainsToDisplay = supportedAppChainIds
     .map((id) => globalChainsList.find((chain) => chain.id === id))
-    .filter((chain) => chain !== undefined) as Chain[]; // Type assertion to Chain[]
+    .filter((chain) => chain !== undefined) as SupportedChain[]; // Type assertion to SupportedChain[]
 
   return (
     <Flex wrap="wrap" gap={{ base: 1, md: 2 }} maxW="100%" overflow="hidden">
@@ -843,8 +1176,8 @@ const AppLogo = ({
 };
 
 interface ChainCardProps {
-  chain: Chain;
-  onClick: (chain: Chain) => void;
+  chain: SupportedChain;
+  onClick: (chain: SupportedChain) => void;
   isSelected: boolean;
 }
 
@@ -903,7 +1236,7 @@ const AppCard = ({
   filterChain,
 }: {
   app: SupportedApp;
-  filterChain: Chain | null;
+  filterChain: SupportedChain | null;
 }) => {
   // Check if this app supports the filtered chain
   const isAppFiltered =
@@ -964,7 +1297,10 @@ const AppCard = ({
 };
 
 // Utility to check if an app supports a specific chain
-const supportsChain = (app: SupportedApp, chainToFilterBy: Chain): boolean => {
+const supportsChain = (
+  app: SupportedApp,
+  chainToFilterBy: SupportedChain
+): boolean => {
   if (app.filterSupportsAllChains) return true;
   return app.supportedChainIds.includes(chainToFilterBy.id);
 };
@@ -1223,13 +1559,22 @@ const SevenSevenZeroTwoBeat = () => {
     isError: isCallsError,
   } = useWaitForCallsStatus({ id: sendCallsData?.id });
 
-  const [selectedChain, setSelectedChain] = useState<Chain | null>(null);
+  const [selectedChain, setSelectedChain] = useState<SupportedChain | null>(
+    null
+  );
   const [activeTabIndex, setActiveTabIndex] = useState(0);
   const [authAddress, setAuthAddress] = useState<string | null>(null);
   const [addressLabels, setAddressLabels] = useState<string[]>([]);
   const [isAuthFetching, setIsAuthFetching] = useState(false);
+  const [rpcUrl, setRpcUrl] = useState("");
+  const [isCheckingRpc, setIsCheckingRpc] = useState(false);
+  const [rpcCheckResult, setRpcCheckResult] = useState<{
+    supported: boolean;
+    chainId?: number;
+    error?: string;
+  } | null>(null);
 
-  const handleChainClick = useCallback((chain: Chain) => {
+  const handleChainClick = useCallback((chain: SupportedChain) => {
     setSelectedChain((prevChain) =>
       prevChain?.id === chain.id ? null : chain
     );
@@ -1348,16 +1693,9 @@ const SevenSevenZeroTwoBeat = () => {
         }
       } catch {
         try {
-          const res = await axios.get(
-            `${
-              process.env.NEXT_PUBLIC_DEVELOPMENT === "true"
-                ? ""
-                : "https://swiss-knife.xyz"
-            }/api/labels/${authAddress}`
-          );
-          const data = res.data;
-          if (data.length > 0) {
-            setAddressLabels(data);
+          const labels = await fetchAddressLabels(authAddress, chain?.id);
+          if (labels.length > 0) {
+            setAddressLabels(labels);
           }
         } catch {
           setAddressLabels([]);
@@ -1373,6 +1711,39 @@ const SevenSevenZeroTwoBeat = () => {
       fetchSetAddressLabels();
     }
   }, [address, chain?.id, fetchSetAddressLabels]);
+
+  // source: https://github.com/azf20/7702-mission/blob/bd960675c91f8bd157d3822c5eb1a2a188bfcd73/packages/7702-checker/utils/checkChainIs7702Enabled.ts
+  const handleCheckRpcUrl = useCallback(async () => {
+    if (!rpcUrl) return;
+
+    setIsCheckingRpc(true);
+    setRpcCheckResult(null);
+
+    try {
+      const customClient = createPublicClientForRpcUrl(rpcUrl);
+
+      // Fetch chain ID
+      const chainId = await customClient.getChainId();
+
+      // Use a dummy address for testing
+      const testAddress =
+        "0x000000000000000000000000000000000dead123" as `0x${string}`;
+      const isSupported = await checkChainIs7702Enabled({
+        publicClient: customClient,
+        address: testAddress,
+      });
+
+      setRpcCheckResult({ supported: isSupported, chainId });
+    } catch (error: any) {
+      console.error("Error checking RPC URL:", error);
+      setRpcCheckResult({
+        supported: false,
+        error: error.message || "Failed to check RPC URL",
+      });
+    } finally {
+      setIsCheckingRpc(false);
+    }
+  }, [rpcUrl]);
 
   return (
     <Layout>
@@ -1684,17 +2055,131 @@ const SevenSevenZeroTwoBeat = () => {
                       </Table>
                     </Box>
                   )}
-                  <HStack
-                    mt={{ base: 0, md: 4 }}
-                    fontSize={{ base: "xs", md: "sm" }}
-                  >
-                    <Text color="red.400">*</Text>
-                    <Text color="whiteAlpha.600">
-                      {
-                        "Hardware wallets like Ledger and Trezor don't support 7702 at the moment"
-                      }
-                    </Text>
-                  </HStack>
+                </Box>
+
+                <Box
+                  mb={{ base: 6, md: 8 }}
+                  width="100%"
+                  maxW="100%"
+                  overflowX="hidden"
+                >
+                  <Box mb={3}>
+                    <Heading size={{ base: "md", md: "lg" }} color="white">
+                      Hardware Wallets
+                    </Heading>
+                  </Box>
+
+                  {isMobile ? (
+                    <VStack
+                      spacing={4}
+                      align="stretch"
+                      width="100%"
+                      maxW="100%"
+                    >
+                      {hardwareWallets.map((wallet, idx) => (
+                        <AppCard
+                          key={idx}
+                          app={wallet}
+                          filterChain={selectedChain}
+                        />
+                      ))}
+                    </VStack>
+                  ) : (
+                    <Box
+                      overflowX="auto"
+                      borderRadius="lg"
+                      borderWidth="1px"
+                      borderColor="whiteAlpha.200"
+                      maxW="100%"
+                      width="100%"
+                    >
+                      <Table variant="simple" size="sm">
+                        <Tbody>
+                          {hardwareWallets.map((wallet, index) => {
+                            const isWalletFiltered =
+                              selectedChain !== null &&
+                              !supportsChain(wallet, selectedChain);
+                            return (
+                              <Tr
+                                key={index}
+                                borderBottom={
+                                  index < hardwareWallets.length - 1
+                                    ? "1px solid"
+                                    : "none"
+                                }
+                                borderColor="whiteAlpha.200"
+                                opacity={isWalletFiltered ? 0.5 : 1}
+                                bg={
+                                  isWalletFiltered
+                                    ? "blackAlpha.400"
+                                    : "transparent"
+                                }
+                              >
+                                <Td
+                                  width={{ base: "150px", md: "200px" }}
+                                  py={4}
+                                  fontWeight="bold"
+                                  color="white"
+                                  verticalAlign="middle"
+                                >
+                                  <Flex align="center">
+                                    <AppLogo app={wallet} size="26px" />
+                                    {wallet.siteUrl ? (
+                                      <Link
+                                        href={wallet.siteUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        color="inherit"
+                                        textDecoration="none"
+                                        _hover={{ textDecoration: "underline" }}
+                                      >
+                                        <Text
+                                          fontSize={{ base: "sm", md: "md" }}
+                                        >
+                                          {wallet.name}
+                                        </Text>
+                                      </Link>
+                                    ) : (
+                                      <Text fontSize={{ base: "sm", md: "md" }}>
+                                        {wallet.name}
+                                      </Text>
+                                    )}
+                                  </Flex>
+                                </Td>
+                                <Td py={4}>
+                                  <AppChainDisplay
+                                    supportedAppChainIds={
+                                      wallet.supportedChainIds
+                                    }
+                                    globalChainsList={chains}
+                                  />
+                                </Td>
+                                <Td py={4} textAlign="right">
+                                  {wallet.announcement && (
+                                    <Link
+                                      href={wallet.announcement.tweet}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      fontSize="sm"
+                                      color="whiteAlpha.700"
+                                      _hover={{
+                                        color: "white",
+                                        textDecoration: "none",
+                                      }}
+                                    >
+                                      {formatAnnouncementDate(
+                                        wallet.announcement.epochTimestamp
+                                      )}
+                                    </Link>
+                                  )}
+                                </Td>
+                              </Tr>
+                            );
+                          })}
+                        </Tbody>
+                      </Table>
+                    </Box>
+                  )}
                 </Box>
 
                 <Box width="100%" maxW="100%" overflowX="hidden">
@@ -1869,6 +2354,21 @@ const SevenSevenZeroTwoBeat = () => {
                     </Heading>
                     <VStack spacing={4} align="stretch">
                       {shameWallets.map((wallet, idx) => (
+                        <ShameAppCard key={idx} app={wallet} />
+                      ))}
+                    </VStack>
+                  </Box>
+
+                  <Box width="100%" maxW="100%" overflowX="hidden">
+                    <Heading
+                      size={{ base: "md", md: "lg" }}
+                      mb={5}
+                      color="white"
+                    >
+                      Hardware Wallets
+                    </Heading>
+                    <VStack spacing={4} align="stretch">
+                      {shameHardwareWallets.map((wallet, idx) => (
                         <ShameAppCard key={idx} app={wallet} />
                       ))}
                     </VStack>
@@ -2103,7 +2603,12 @@ const SevenSevenZeroTwoBeat = () => {
                                 colorScheme="green"
                                 size="sm"
                                 isDisabled={
-                                  !address || isPending || isWaitingForCalls
+                                  !address ||
+                                  isPending ||
+                                  isWaitingForCalls ||
+                                  !availableCapabilities ||
+                                  Object.keys(availableCapabilities).length ===
+                                    0
                                 }
                                 isLoading={isPending || isWaitingForCalls}
                                 loadingText={
@@ -2151,18 +2656,16 @@ const SevenSevenZeroTwoBeat = () => {
                             {/* Description */}
                             <Box
                               p={4}
-                              maxW="40rem"
                               bg="whiteAlpha.100"
                               borderRadius="md"
                               border="1px solid"
                               borderColor="whiteAlpha.200"
                             >
                               <Text color="gray.400" fontSize="sm">
-                                Your account is not currently upgraded to
-                                support EIP-7702. Click &quot;Upgrade
-                                Account&quot; to enable account abstraction
-                                features like transaction batching and
-                                delegation.
+                                {!availableCapabilities ||
+                                Object.keys(availableCapabilities).length === 0
+                                  ? "Your wallet doesn't support any capabilities on this chain. Please try switching to a different chain or use a wallet that supports EIP-5792."
+                                  : 'Your account is not currently upgraded to support EIP-7702. Click "Upgrade Account" to enable account abstraction features like transaction batching and delegation.'}
                               </Text>
                             </Box>
                           </VStack>
@@ -2267,6 +2770,155 @@ const SevenSevenZeroTwoBeat = () => {
                           </Text>
                         </Box>
                       )}
+                    </VStack>
+                  </Box>
+
+                  {/* Check Chain 7702 Support Section */}
+                  <Box
+                    p={4}
+                    bg="whiteAlpha.50"
+                    borderRadius="lg"
+                    border="1px solid"
+                    borderColor="whiteAlpha.200"
+                    maxW="800px"
+                    mx="auto"
+                    mt={8}
+                  >
+                    <VStack spacing={4} align="stretch">
+                      <HStack spacing={2} align="center">
+                        <Icon as={FiTool} color="purple.400" boxSize={6} />
+                        <Heading size="md" color="gray.300">
+                          Check if Chain Supports 7702
+                        </Heading>
+                      </HStack>
+
+                      <VStack spacing={4} align="stretch">
+                        <Box>
+                          <HStack spacing={2} mb={2} align="center">
+                            <Text
+                              color="gray.400"
+                              fontSize="sm"
+                              fontWeight="medium"
+                            >
+                              RPC URL
+                            </Text>
+                            <Link
+                              href="https://chainlist.org/"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              fontSize="xs"
+                              color="blue.400"
+                              _hover={{ color: "blue.300" }}
+                            >
+                              <HStack spacing={1}>
+                                <Text>Get RPC from Chainlist</Text>
+                                <Icon as={FiExternalLink} boxSize={3} />
+                              </HStack>
+                            </Link>
+                          </HStack>
+                          <HStack spacing={2}>
+                            <InputField
+                              placeholder="https://..."
+                              value={rpcUrl}
+                              onChange={(e) => {
+                                setRpcUrl(e.target.value);
+                                setRpcCheckResult(null);
+                              }}
+                              fontSize="md"
+                              flex="1"
+                            />
+                            <Button
+                              onClick={handleCheckRpcUrl}
+                              colorScheme="purple"
+                              size="md"
+                              isDisabled={!rpcUrl || isCheckingRpc}
+                              isLoading={isCheckingRpc}
+                              loadingText="Checking..."
+                              flexShrink={0}
+                            >
+                              Check Support
+                            </Button>
+                          </HStack>
+                        </Box>
+
+                        {/* Result Display */}
+                        {rpcCheckResult && (
+                          <Box
+                            p={4}
+                            bg={
+                              rpcCheckResult.supported ? "green.900" : "red.900"
+                            }
+                            borderRadius="md"
+                            border="1px solid"
+                            borderColor={
+                              rpcCheckResult.supported ? "green.600" : "red.600"
+                            }
+                          >
+                            <HStack spacing={2} mb={2}>
+                              <Icon
+                                as={rpcCheckResult.supported ? FiCheck : FiX}
+                                color={
+                                  rpcCheckResult.supported
+                                    ? "green.200"
+                                    : "red.200"
+                                }
+                                boxSize={5}
+                              />
+                              <Text
+                                color={
+                                  rpcCheckResult.supported
+                                    ? "green.200"
+                                    : "red.200"
+                                }
+                                fontWeight="bold"
+                                fontSize="md"
+                              >
+                                {rpcCheckResult.chainId
+                                  ? rpcCheckResult.supported
+                                    ? `Chain ID ${rpcCheckResult.chainId} Supports 7702`
+                                    : `Chain ID ${rpcCheckResult.chainId} Does Not Support 7702`
+                                  : rpcCheckResult.supported
+                                    ? "Chain Supports 7702"
+                                    : "Chain Does Not Support 7702"}
+                              </Text>
+                            </HStack>
+                            {rpcCheckResult.error && (
+                              <Text
+                                color="red.300"
+                                fontSize="sm"
+                                fontFamily="mono"
+                              >
+                                Error: {rpcCheckResult.error}
+                              </Text>
+                            )}
+                          </Box>
+                        )}
+
+                        {/* Description */}
+                        <Box
+                          p={4}
+                          bg="whiteAlpha.100"
+                          borderRadius="md"
+                          border="1px solid"
+                          borderColor="whiteAlpha.200"
+                        >
+                          <Text color="gray.400" fontSize="sm">
+                            Enter an RPC URL to check if the blockchain supports
+                            EIP-7702. You can find RPC URLs for various chains
+                            on{" "}
+                            <Link
+                              href="https://chainlist.org/"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              color="blue.400"
+                              _hover={{ color: "blue.300" }}
+                            >
+                              Chainlist.org
+                            </Link>
+                            .
+                          </Text>
+                        </Box>
+                      </VStack>
                     </VStack>
                   </Box>
                 </Box>

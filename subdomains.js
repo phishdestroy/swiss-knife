@@ -1,11 +1,12 @@
 const subdomains = {
   CALLDATA: {
     base: "calldata",
-    paths: ["decoder"],
+    paths: ["decoder", "viem-error-simulate"],
   },
   EXPLORER: {
     base: "explorer",
-    paths: ["address", "tx"],
+    // Address and transaction routes require an identifier; link to the search page.
+    paths: [],
   },
   CONVERTER: {
     base: "converter",
@@ -35,8 +36,8 @@ const subdomains = {
     base: "uniswap",
     paths: ["tick-to-price"],
   },
-  CONTRACT_ADDRESS: {
-    base: "contract-address",
+  DETERMINE_ADDRESS: {
+    base: "determine-address",
     paths: [],
   },
   CONTRACT_DIFF: {
@@ -53,7 +54,7 @@ const subdomains = {
   },
   ENS: {
     base: "ens",
-    paths: ["history"],
+    paths: ["history", "ccip"],
   },
   "7702BEAT": {
     base: "7702beat",
@@ -73,6 +74,10 @@ const subdomains = {
   },
   USDC_PAY: {
     base: "usdc-pay",
+    paths: [],
+  },
+  SIWE: {
+    base: "siwe",
     paths: [],
   },
 };

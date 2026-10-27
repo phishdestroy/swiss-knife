@@ -27,6 +27,7 @@ import {
   ImpersonatorFloatingButton,
 } from "@/utils/impersonatorConnector";
 import { walletChains } from "@/data/chains";
+import { getRpcUrlForChain } from "@/data/common";
 export { walletChains };
 
 const appName = "Swiss-Knife.xyz";
@@ -72,7 +73,7 @@ export const config = createConfig({
   chains: walletChains,
   transports: walletChains.reduce<Record<number, ReturnType<typeof http>>>(
     (transport, chain) => {
-      transport[chain.id] = http();
+      transport[chain.id] = http(getRpcUrlForChain(chain.id));
       return transport;
     },
     {}

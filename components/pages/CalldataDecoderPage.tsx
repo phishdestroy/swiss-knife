@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import React, { useState, useEffect } from "react";
+import React, { Suspense, useState, useEffect } from "react";
 import {
   Heading,
   Table,
@@ -34,8 +34,9 @@ import {
   parseAsString,
   useQueryState,
 } from "next-usequerystate";
-import { createPublicClient, http, Hex, Chain, stringify } from "viem";
-import { DecodeRecursiveResult, SelectedOptionState } from "@/types";
+import { Hex, Chain, stringify } from "viem";
+import { getPublicClient } from "@/lib/publicClient";
+import { DecodeRecursiveResult, SelectedOptionState , DecodeEventResult } from "@/types";
 import {
   c,
   chainIdToChain,
@@ -52,13 +53,9 @@ import { DarkButton } from "@/components/DarkButton";
 import TabsSelector from "@/components/Tabs/TabsSelector";
 import { DarkSelect } from "@/components/DarkSelect";
 import { CopyToClipboard } from "@/components/CopyToClipboard";
-import { decodeRecursive } from "@/lib/decoder";
+import { decodeEvents, decodeRecursive } from "@/lib/decoder";
 
-export const CalldataDecoderPage = ({
-  headerText,
-}: {
-  headerText?: string;
-}) => {
+function CalldataDecoderPageContent({ headerText }: { headerText?: string }) {
   const toast = useToast();
   const searchParams = useSearchParams();
 
@@ -82,8 +79,10 @@ export const CalldataDecoderPage = ({
   const [result, setResult] = useState<DecodeRecursiveResult>();
   const [isLoading, setIsLoading] = useState(false);
   const [pasted, setPasted] = useState(false);
+  const [decodedEvents, setDecodedEvents] = useState<DecodeEventResult[] | null>(null);
 
   const [selectedTabIndex, setSelectedTabIndex] = useState(0);
+  const [resultTabIndex, setResultTabIndex] = useState(0); // 0 = Calldata, 1 = Events
 
   const [abi, setAbi] = useState<any>();
 
@@ -138,6 +137,8 @@ export const CalldataDecoderPage = ({
       setCalldata(null);
       setContractAddress(null);
     }
+    // Reset result tab when switching main tabs
+    setResultTabIndex(0);
   }, [selectedTabIndex]);
 
   useEffect(() => {
@@ -224,7 +225,10 @@ export const CalldataDecoderPage = ({
   };
 
   const decodeFromTx = async (_fromTxInput?: string, _chainId?: number) => {
+    console.log("decodeFromTx called");
     setIsLoading(true);
+    setDecodedEvents(null);
+    setResultTabIndex(0); // Reset to Calldata tab for new decode
 
     const __fromTxInput = _fromTxInput || fromTxInput;
 
@@ -240,36 +244,29 @@ export const CalldataDecoderPage = ({
         txHash = __fromTxInput;
 
         if (!txShowSelectNetwork) {
-          // if tx hash is provided, but chainId is not, then show select network
           setTxShowSelectNetwork(true);
-
-          // if chainId not provided (from URL)
           if (!_chainId) {
             setIsLoading(false);
+            console.log("decodeFromTx early return: network not selected");
             return;
           }
         }
       } else {
         txHash = __fromTxInput.split("/").pop()!;
-
         const chainKey = Object.keys(c).filter((chainKey) => {
           const chain = c[chainKey as keyof typeof c] as Chain;
-
-          // using "null" instead of "" because __fromTxInput.split("/") contains ""
           let explorerDomainDefault = "null";
           let explorerDomainEtherscan = "null";
           if (chain.blockExplorers) {
             explorerDomainDefault = chain.blockExplorers.default.url
               .split("//")
               .pop()!;
-
             if (chain.blockExplorers.etherscan) {
               explorerDomainEtherscan = chain.blockExplorers.etherscan.url
                 .split("//")
                 .pop()!;
             }
           }
-
           return (
             __fromTxInput
               .split("/")
@@ -285,18 +282,36 @@ export const CalldataDecoderPage = ({
         chain = c[chainKey as keyof typeof c];
       }
 
-      const publicClient = createPublicClient({
-        chain,
-        transport: http(),
-      });
+      const publicClient = getPublicClient(chain.id);
       const transaction = await publicClient.getTransaction({
         hash: txHash as Hex,
       });
+      const txReceipt = await publicClient.getTransactionReceipt({
+        hash: txHash as Hex,
+      });
+
       decode({
         _calldata: transaction.input,
         _address: transaction.to!,
         _chainId: chain.id,
       });
+
+      try {
+        console.log("decodeEvents about to be called");
+        // Decode events from the target contract only
+        const events = await decodeEvents({
+          logs: txReceipt.logs.map(log => ({
+            topics: log.topics,
+            data: log.data,
+          })),
+          chainId: chain.id,
+          address: transaction.to!,
+        });
+        console.log({ DECODED_EVENTS: events });
+        setDecodedEvents(events);
+      } catch (e: any) {
+        console.log("Failed to decode events:", e.message);
+      }
     } catch {
       setIsLoading(false);
       toast({
@@ -582,7 +597,17 @@ export const CalldataDecoderPage = ({
           </Tr>
         </Tbody>
       </Table>
-      {result && (
+      {/* Result Tabs for "from Tx" mode */}
+      {selectedTabIndex === 3 && (result || (decodedEvents && decodedEvents.length > 0)) && (
+        <TabsSelector
+          tabs={["Calldata", `Events${decodedEvents?.length ? ` (${decodedEvents.length})` : ""}`]}
+          selectedTabIndex={resultTabIndex}
+          setSelectedTabIndex={setResultTabIndex}
+        />
+      )}
+
+      {/* Calldata Result - show directly for non-Tx modes, or when Calldata tab selected for Tx mode */}
+      {result && (selectedTabIndex !== 3 || resultTabIndex === 0) && (
         <Box minW={"80%"}>
           {result.functionName && result.functionName !== "__abi_decoded__" ? (
             <HStack>
@@ -620,6 +645,124 @@ export const CalldataDecoderPage = ({
           </Stack>
         </Box>
       )}
+
+      {/* Decoded Events Section - only show when Events tab selected in Tx mode */}
+      {selectedTabIndex === 3 && resultTabIndex === 1 && (
+        <DecodedEventsView
+          events={decodedEvents || []}
+          chainId={chainId}
+        />
+      )}
     </Box>
+  );
+}
+
+type DecodedEventsViewProps = {
+  events: DecodeEventResult[];
+  chainId: number;
+};
+
+function DecodedEventsView({ events, chainId }: DecodedEventsViewProps) {
+  if (!events || events.length === 0) return null;
+
+  return (
+    <Stack mt={4} spacing={4} minW="80%">
+      {events.map((event, idx) => (
+        <EventItem
+          key={idx}
+          event={event}
+          index={idx}
+          chainId={chainId}
+        />
+      ))}
+    </Stack>
+  );
+}
+
+type EventItemProps = {
+  event: DecodeEventResult;
+  index: number;
+  chainId: number;
+};
+
+function EventItem({ event, index, chainId }: EventItemProps) {
+  const { isOpen, onToggle } = useDisclosure({ defaultIsOpen: index === 0 });
+
+  return (
+    <Box
+      border="1px solid"
+      borderColor="whiteAlpha.200"
+      rounded="lg"
+      overflow="hidden"
+    >
+      {/* Collapsible Header */}
+      <HStack
+        p={3}
+        bg="whiteAlpha.100"
+        cursor="pointer"
+        onClick={onToggle}
+        _hover={{ bg: "whiteAlpha.200" }}
+      >
+        <HStack spacing={3}>
+          <Box
+            fontSize="xs"
+            color="whiteAlpha.600"
+            bg="whiteAlpha.200"
+            px={2}
+            py={0.5}
+            rounded="md"
+          >
+            #{index + 1}
+          </Box>
+          <Box>
+            <Box fontSize="xs" color="whiteAlpha.600">
+              event
+            </Box>
+            <Box fontWeight="bold">{event.eventName}</Box>
+          </Box>
+        </HStack>
+
+        <Spacer />
+
+        <HStack spacing={2}>
+          <Box onClick={(e) => e.stopPropagation()}>
+            <CopyToClipboard
+              textToCopy={event.signature}
+              labelText="Copy signature"
+            />
+          </Box>
+          <Text fontSize="xl" fontWeight="bold">
+            {isOpen ? <ChevronUpIcon /> : <ChevronDownIcon />}
+          </Text>
+        </HStack>
+      </HStack>
+
+      {/* Collapsible Content */}
+      <Collapse in={isOpen} animateOpacity>
+        <Stack
+          p={4}
+          spacing={4}
+          minW="40rem"
+          bg="whiteAlpha.50"
+        >
+          {event.args.map((arg, i) =>
+            renderParams(i, arg, chainId)
+          )}
+        </Stack>
+      </Collapse>
+    </Box>
+  );
+}
+
+
+export const CalldataDecoderPage = ({
+  headerText,
+}: {
+  headerText?: string;
+}) => {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <CalldataDecoderPageContent headerText={headerText} />
+    </Suspense>
   );
 };

@@ -141,6 +141,7 @@ export const addressExplorers: ExplorersData = {
       [c.polygonZkEvm.id]: "zkevm",
       [c.zkSync.id]: "zksync",
       [c.zkSyncSepoliaTestnet.id]: "zksync-sepolia",
+      [c.megaeth.id]: "megaeth",
     },
   },
   Bloxy: {
@@ -331,6 +332,24 @@ export const addressExplorers: ExplorersData = {
     },
     forContracts: true,
   },
+  EVMole: {
+    urlLayout: `https://evmole.xyz/#${ADDRESS_KEY}/${CHAINLABEL_KEY}`,
+    chainIdToLabel: {
+      [c.mainnet.id]: "eth",
+      [c.bsc.id]: "bnb",
+      [c.arbitrum.id]: "arb",
+      [c.base.id]: "base",
+      [c.optimism.id]: "op",
+      [c.polygon.id]: "matic",
+    },
+    forContracts: true,
+  },
+  "evm.now": {
+    urlLayout: `https://evm.now/address/${ADDRESS_KEY}`,
+    chainIdToLabel: {
+      [c.mainnet.id]: "",
+    },
+  },
   EVMStorage: {
     urlLayout: `https://evm.storage/eth/latest/${ADDRESS_KEY}`,
     chainIdToLabel: {
@@ -379,6 +398,31 @@ export const addressExplorers: ExplorersData = {
       [c.moonbeam.id]: "moonbeam",
       [c.optimism.id]: "optimism",
       [c.polygon.id]: "polygon",
+    },
+  },
+  "Citrea Explorer": {
+    urlLayout: `https://explorer.mainnet.citrea.xyz/address/${ADDRESS_KEY}`,
+    chainIdToLabel: {
+      [c.citrea.id]: "",
+    },
+  },
+  "Citrea Explorer (Testnet)": {
+    urlLayout: `https://explorer.testnet.citrea.xyz/address/${ADDRESS_KEY}`,
+    chainIdToLabel: {
+      [c.citreaTestnet.id]: "",
+    },
+  },
+  "MegaETH Explorer": {
+    urlLayout: `https://mega.etherscan.io/address/${ADDRESS_KEY}`,
+    chainIdToLabel: {
+      [c.megaeth.id]: "",
+    },
+  },
+  SeiScan: {
+    urlLayout: `https://${CHAINLABEL_KEY}seiscan.io/address/${ADDRESS_KEY}`,
+    chainIdToLabel: {
+      [c.sei.id]: "",
+      [c.seiTestnet.id]: "testnet.",
     },
   },
   Monobase: {

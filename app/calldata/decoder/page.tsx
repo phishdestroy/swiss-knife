@@ -4,8 +4,9 @@ import type { Metadata } from "next";
 // Putting the page into separate component as it uses "use client" which doesn't work with `generateMetadata`
 import { CalldataDecoderPage as CalldataDecoderP } from "@/components/pages/CalldataDecoderPage";
 import { metadata } from "../layout";
-import { Chain, createPublicClient, Hex, http } from "viem";
+import { Chain, Hex } from "viem";
 import { c, chainIdToChain } from "@/data/common";
+import { getPublicClient } from "@/lib/publicClient";
 
 interface PageProps {
   searchParams: { [key: string]: string | string[] | undefined };
@@ -67,10 +68,7 @@ export async function generateMetadata({
         chain = c[chainKey as keyof typeof c];
       }
 
-      const publicClient = createPublicClient({
-        chain,
-        transport: http(),
-      });
+      const publicClient = getPublicClient(chain.id);
       const transaction = await publicClient.getTransaction({
         hash: txHash as Hex,
       });

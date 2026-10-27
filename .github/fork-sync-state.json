@@ -1,0 +1,8 @@
+{
+  "checked_at": "2026-10-27T11:30:45.443929+00:00",
+  "upstream": "swiss-knife-xyz/swiss-knife",
+  "upstream_branch": "master",
+  "upstream_commit": "703ac93b7ef6b144f56b44b2cb18f053eab432cc",
+  "version": 1,
+  "workflow_policy": "preserve fork workflows; never import upstream workflows"
+}

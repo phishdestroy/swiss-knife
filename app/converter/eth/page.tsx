@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import React, { useEffect, useState } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import {
   Heading,
   Table,
@@ -16,6 +16,7 @@ import { parseAsString, useQueryState } from "next-usequerystate";
 import {
   parseEther,
   parseGwei,
+  parseUnits,
   formatEther,
   formatGwei,
   formatUnits,
@@ -24,7 +25,7 @@ import { InputField } from "@/components/InputField";
 import { Label } from "@/components/Label";
 import { useLocalStorage } from "usehooks-ts";
 
-const ETHUnitConverter = () => {
+function ETHUnitConverterContent() {
   const searchParams = useSearchParams();
   const weiFromUrl = searchParams.get("wei");
 
@@ -78,7 +79,7 @@ const ETHUnitConverter = () => {
       if (exceptUnit !== "gwei") setGwei(formatGwei(BigInt(inWei)));
       if (exceptUnit !== "eth") setEth(formatEther(BigInt(inWei)));
       if (exceptUnit !== "unit") {
-        const unitValue = formatUnits(BigInt(inWei), 18 - exponent);
+        const unitValue = formatUnits(BigInt(inWei), exponent);
         setUnit(unitValue);
       }
       if (exceptUnit !== "usd") {
@@ -107,7 +108,7 @@ const ETHUnitConverter = () => {
 
   const recalculateUnit = () => {
     if (wei) {
-      const unitValue = formatUnits(BigInt(wei), 18 - exponent);
+      const unitValue = formatUnits(BigInt(wei), exponent);
       setUnit(unitValue);
     }
   };
@@ -199,9 +200,7 @@ const ETHUnitConverter = () => {
                 value={unit}
                 onChange={(e) =>
                   handleOnChange(e, "unit", (value) =>
-                    parseEther(
-                      (parseFloat(value) / 10 ** exponent).toString()
-                    ).toString()
+                    parseUnits(value, exponent).toString()
                   )
                 }
               />
@@ -256,6 +255,12 @@ const ETHUnitConverter = () => {
       </Table>
     </>
   );
-};
+}
 
-export default ETHUnitConverter;
+export default function ETHUnitConverter() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <ETHUnitConverterContent />
+    </Suspense>
+  );
+}

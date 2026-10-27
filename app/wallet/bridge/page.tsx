@@ -21,7 +21,7 @@ import frameSdk, { Context } from "@farcaster/frame-sdk";
 import { useAccount, useWalletClient, useChainId, useSwitchChain } from "wagmi";
 import { base } from "viem/chains";
 import { buildApprovedNamespaces } from "@walletconnect/utils";
-import { createPublicClient, http } from "viem";
+import { getPublicClient } from "@/lib/publicClient";
 import {
   publicActionsL1,
   publicActionsL2,
@@ -173,11 +173,8 @@ export default function WalletBridgePage() {
 
               try {
                 // Create L2 public client
-                const l2Chain = chainIdToChain[l2ChainId];
-                const publicClientL2 = createPublicClient({
-                  chain: l2Chain,
-                  transport: http(),
-                }).extend(publicActionsL2());
+                const publicClientL2 =
+                  getPublicClient(l2ChainId).extend(publicActionsL2());
 
                 // Build deposit transaction
                 setForceInclusionProgress((prev) => ({
@@ -249,10 +246,8 @@ export default function WalletBridgePage() {
 
                 // Create L1 wallet client
                 const l1Chain = chainIdToChain[l1ChainId];
-                const publicClientL1 = createPublicClient({
-                  chain: l1Chain,
-                  transport: http(),
-                }).extend(publicActionsL1());
+                const publicClientL1 =
+                  getPublicClient(l1ChainId).extend(publicActionsL1());
 
                 // Submit to L1
                 setForceInclusionProgress((prev) => ({
@@ -439,11 +434,34 @@ export default function WalletBridgePage() {
                 ? JSON.parse(typedDataRaw)
                 : typedDataRaw;
 
+            // Infer primaryType if not provided (some dApps don't include it)
+            let primaryType = typedData.primaryType;
+            if (!primaryType && typedData.types) {
+              const typeNames = Object.keys(typedData.types).filter(
+                (t) => t !== "EIP712Domain"
+              );
+              if (typeNames.length === 1) {
+                primaryType = typeNames[0];
+              } else if (typeNames.length > 1 && typedData.message) {
+                // Try to find the type that matches the message structure
+                primaryType =
+                  typeNames.find((typeName) => {
+                    const typeFields = typedData.types[typeName];
+                    return typeFields?.every(
+                      (field: { name: string }) => field.name in typedData.message
+                    );
+                  }) || typeNames[0];
+              }
+            }
+
+            // Remove EIP712Domain from types (viem adds it internally)
+            const { EIP712Domain, ...typesWithoutDomain } = typedData.types || {};
+
             const signature = await walletClient.signTypedData({
               account: address as `0x${string}`,
               domain: typedData.domain,
-              types: typedData.types,
-              primaryType: typedData.primaryType,
+              types: typesWithoutDomain,
+              primaryType: primaryType,
               message: typedData.message,
             });
 
@@ -886,15 +904,12 @@ export default function WalletBridgePage() {
       const requestedChainId = parseInt(requestedChainIdStr);
 
       // Check if we need to switch chains for this request
+      // Note: Only transactions require chain switching. Message signing operations
+      // (personal_sign, eth_sign, eth_signTypedData*) are chain-agnostic.
       const requiresChainSwitch =
         chainId !== requestedChainId &&
         (request.method === "eth_sendTransaction" ||
-          request.method === "eth_signTransaction" ||
-          request.method === "eth_sign" ||
-          request.method === "personal_sign" ||
-          request.method === "eth_signTypedData" ||
-          request.method === "eth_signTypedData_v3" ||
-          request.method === "eth_signTypedData_v4");
+          request.method === "eth_signTransaction");
 
       setNeedsChainSwitch(requiresChainSwitch);
       setTargetChainId(requiresChainSwitch ? requestedChainId : null);
@@ -984,15 +999,10 @@ export default function WalletBridgePage() {
 
       // Create L1 and L2 clients
       const l1Chain = chainIdToChain[l1ChainId];
-      const l2Chain = chainIdToChain[l2ChainId];
-      const publicClientL1 = createPublicClient({
-        chain: l1Chain,
-        transport: http(),
-      }).extend(publicActionsL1());
-      const publicClientL2 = createPublicClient({
-        chain: l2Chain,
-        transport: http(),
-      }).extend(publicActionsL2());
+      const publicClientL1 =
+        getPublicClient(l1ChainId).extend(publicActionsL1());
+      const publicClientL2 =
+        getPublicClient(l2ChainId).extend(publicActionsL2());
 
       // Ensure we're on L1 chain
       await switchChainAsync({ chainId: l1ChainId });
@@ -1171,11 +1181,8 @@ export default function WalletBridgePage() {
 
       try {
         // Rebuild deposit transaction with new gas limit
-        const l2Chain = chainIdToChain[l2ChainId];
-        const publicClientL2 = createPublicClient({
-          chain: l2Chain,
-          transport: http(),
-        }).extend(publicActionsL2());
+        const publicClientL2 =
+          getPublicClient(l2ChainId).extend(publicActionsL2());
 
         const depositArgs = await publicClientL2.buildDepositTransaction({
           mint: txParams.value ? BigInt(txParams.value) : 0n,
